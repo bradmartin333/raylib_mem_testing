@@ -2,6 +2,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
+#include <stddef.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,6 +17,17 @@
 #include "raylib.h"
 
 static volatile sig_atomic_t g_keep_running = 1;
+
+typedef struct Ball {
+    float x;
+    float y;
+    float vx;
+    float vy;
+    int radius;
+    Color color;
+} Ball;
+
+#define BALL_RADIUS 12
 
 static void handle_signal(int sig)
 {
@@ -55,6 +68,48 @@ static void convert_rgba_to_rgb565(const Color *src, uint16_t *dst, uint32_t wid
     size_t count = (size_t)width * (size_t)height;
     for (size_t i = 0; i < count; ++i) {
         dst[i] = rgba_to_rgb565(src[i]);
+    }
+}
+
+static void update_balls(Ball *balls, size_t count, float dt_s, int width, int height)
+{
+    for (size_t i = 0; i < count; ++i) {
+        Ball *ball = &balls[i];
+        ball->x += ball->vx * dt_s;
+        ball->y += ball->vy * dt_s;
+
+        if (ball->x - (float)ball->radius < 0.0f) {
+            ball->x = (float)ball->radius;
+            ball->vx = -ball->vx;
+        } else if (ball->x + (float)ball->radius > (float)width) {
+            ball->x = (float)width - (float)ball->radius;
+            ball->vx = -ball->vx;
+        }
+
+        if (ball->y - (float)ball->radius < 0.0f) {
+            ball->y = (float)ball->radius;
+            ball->vy = -ball->vy;
+        } else if (ball->y + (float)ball->radius > (float)height) {
+            ball->y = (float)height - (float)ball->radius;
+            ball->vy = -ball->vy;
+        }
+    }
+}
+
+static void draw_balls(Image *canvas, const Ball *balls, size_t count)
+{
+    // Rasterize each ball as horizontal spans of a circle equation.
+    for (size_t i = 0; i < count; ++i) {
+        int cx = (int)balls[i].x;
+        int cy = (int)balls[i].y;
+        int radius = balls[i].radius;
+        int r2 = radius * radius;
+
+        for (int y = -radius; y <= radius; ++y) {
+            int inside = r2 - (y * y);
+            int x = (int)sqrtf((float)inside);
+            ImageDrawLine(canvas, cx - x, cy + y, cx + x, cy + y, balls[i].color);
+        }
     }
 }
 
@@ -103,17 +158,36 @@ int main(int argc, char **argv)
     header->stride_bytes = stride_bytes;
 
     Image canvas = GenImageColor((int)width, (int)height, (Color){20, 22, 30, 255});
+    Ball balls[] = {
+        {52.0f, 60.0f, 62.0f, 44.0f, BALL_RADIUS, (Color){255, 96, 96, 255}},
+        {128.0f, 84.0f, -56.0f, 52.0f, BALL_RADIUS, (Color){96, 196, 255, 255}},
+        {205.0f, 136.0f, 70.0f, -48.0f, BALL_RADIUS, (Color){132, 255, 172, 255}},
+        {270.0f, 180.0f, -74.0f, -62.0f, BALL_RADIUS, (Color){255, 222, 92, 255}},
+        {158.0f, 200.0f, 48.0f, -70.0f, BALL_RADIUS, (Color){220, 152, 255, 255}},
+    };
+    const size_t ball_count = sizeof(balls) / sizeof(balls[0]);
+    uint64_t prev_tick_ns = realtime_ns();
 
     printf("timestamp_writer publishing to %s (%ux%u, RGB565)\n", shm_name, width, height);
 
     while (g_keep_running) {
         uint64_t now_ns = realtime_ns();
+        float dt_s = (float)((double)(now_ns - prev_tick_ns) / 1000000000.0);
+        if (dt_s < 0.0f) {
+            dt_s = 0.0f;
+        }
+        if (dt_s > 0.05f) {
+            dt_s = 0.05f;
+        }
+        prev_tick_ns = now_ns;
+
         char text[SHM_TEXT_CAPACITY];
         format_timestamp(text, sizeof(text), now_ns);
 
+        update_balls(balls, ball_count, dt_s, (int)width, (int)height);
+
         ImageClearBackground(&canvas, (Color){20, 22, 30, 255});
-        ImageDrawRectangle(&canvas, 0, 0, (int)width, 28, (Color){34, 42, 64, 255});
-        ImageDrawText(&canvas, "raylib software render -> shared memory", 8, 8, 12, (Color){183, 214, 255, 255});
+        draw_balls(&canvas, balls, ball_count);
         ImageDrawText(&canvas, text, 10, (int)(height / 2) - 10, 20, (Color){120, 255, 160, 255});
 
         convert_rgba_to_rgb565((const Color *)canvas.data, pixel_dst, width, height);

@@ -1,4 +1,4 @@
-# viewer/cpp
+# viewer/sdl2-viewer
 
 SDL2 native window viewer for the shared-memory RGB565 framebuffer.
 
@@ -21,5 +21,5 @@ cmake --build build -j
 ## Run
 
 ```bash
-./build/shm_viewer_cpp /raylib_fb_rgb565
+./build/sdl2_viewer /raylib_fb_rgb565
 ```
