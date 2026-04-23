@@ -1,8 +1,8 @@
 #ifndef SHM_LAYOUT_H
 #define SHM_LAYOUT_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define SHM_DEFAULT_NAME "/raylib_fb_rgb565"
 #define SHM_MAGIC 0x52464231u
